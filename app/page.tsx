@@ -201,7 +201,7 @@ export default function Home() {
           />
         </div>
 
-        <p className="mt-4 text-sm text-zinc-500">
+        <p className="mt-4 text-zinc-500">
           {movie.title} ({movie.year})
         </p>
 
