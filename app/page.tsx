@@ -18,20 +18,14 @@ function formatTime(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function getTimelinePercent(timestampSeconds: number, runtimeSeconds: number) {
-  if (runtimeSeconds <= 0) {
-    return 0;
-  }
-
-  const percent = (timestampSeconds / runtimeSeconds) * 100;
-
-  return Math.min(100, Math.max(0, percent));
-}
-
 export default function Home() {
   const [movieIndex, setMovieIndex] = useState(0);
-  const [guessPercent, setGuessPercent] = useState(50);
+  const [guessedTimestampSeconds, setGuessedTimestampSeconds] = useState(
+    Math.round((movies[0]?.runtimeSeconds ?? 0) / 2),
+  );
   const [isResultShown, setIsResultShown] = useState(false);
+  const [sessionScore, setSessionScore] = useState(0);
+  const [isSessionFinished, setIsSessionFinished] = useState(false);
 
   const movie = movies[movieIndex];
 
@@ -45,37 +39,86 @@ export default function Home() {
     );
   }
 
-  const correctPercent = getTimelinePercent(
-    movie.frameTimestampSeconds,
-    movie.runtimeSeconds,
-  );
-  const guessedTimestampSeconds = Math.round(
-    (movie.runtimeSeconds * guessPercent) / 100,
-  );
   const differenceSeconds = Math.abs(
     guessedTimestampSeconds - movie.frameTimestampSeconds,
   );
-  const score = Math.max(
+  const roundScore = Math.max(
     0,
-    Math.round(100 - (differenceSeconds / movie.runtimeSeconds) * 100),
+    Math.round(1000 - (differenceSeconds / movie.runtimeSeconds) * 1000),
   );
 
   function handleCheckGuess() {
+    if (isResultShown) {
+      return;
+    }
+
+    setSessionScore((currentScore) => currentScore + roundScore);
     setIsResultShown(true);
   }
 
+  function handleAdjustGuess(seconds: number) {
+    setGuessedTimestampSeconds((currentTimestamp) =>
+      Math.min(movie.runtimeSeconds, Math.max(0, currentTimestamp + seconds)),
+    );
+  }
+
   function handleNextMovie() {
-    setMovieIndex((currentIndex) => (currentIndex + 1) % movies.length);
-    setGuessPercent(50);
+    if (movieIndex === movies.length - 1) {
+      setIsSessionFinished(true);
+      return;
+    }
+
+    const nextMovieIndex = movieIndex + 1;
+    const nextMovie = movies[nextMovieIndex];
+
+    setMovieIndex(nextMovieIndex);
+    setGuessedTimestampSeconds(Math.round(nextMovie.runtimeSeconds / 2));
     setIsResultShown(false);
+  }
+
+  function handleRestartGame() {
+    setMovieIndex(0);
+    setGuessedTimestampSeconds(
+      Math.round((movies[0]?.runtimeSeconds ?? 0) / 2),
+    );
+    setIsResultShown(false);
+    setSessionScore(0);
+    setIsSessionFinished(false);
+  }
+
+  if (isSessionFinished) {
+    return (
+      <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 py-10 text-zinc-100">
+        <div className="flex w-full max-w-xl flex-col items-center text-center">
+          <p className="text-sm font-medium text-amber-400">Игра завершена</p>
+          <h1 className="mt-3 text-4xl font-bold tracking-tight sm:text-5xl">
+            CinemaGuesser
+          </h1>
+          <p className="mt-10 text-zinc-400">Набрано очков</p>
+          <p className="mt-3 text-6xl font-bold text-emerald-400">
+            {sessionScore}
+          </p>
+          <button
+            type="button"
+            onClick={handleRestartGame}
+            className="mt-10 rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+          >
+            Начать игру заново
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center bg-zinc-950 px-6 py-10 text-zinc-100">
       <div className="flex w-full max-w-4xl flex-col items-center text-center">
-        <p className="mb-3 text-sm font-medium text-amber-400">
-          Movie {movieIndex + 1} / {movies.length}
-        </p>
+        <div className="mb-3 flex items-center gap-6 text-sm font-medium">
+          <p className="text-amber-400">
+            Раунд {movieIndex + 1} / {movies.length}
+          </p>
+          <p className="text-zinc-400">Общий счёт: {sessionScore}</p>
+        </div>
 
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
           CinemaGuesser
@@ -105,37 +148,45 @@ export default function Home() {
             <span>{formatTime(movie.runtimeSeconds)}</span>
           </div>
 
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="0.1"
-            value={guessPercent}
-            disabled={isResultShown}
-            onChange={(event) => setGuessPercent(Number(event.target.value))}
-            className="w-full cursor-pointer accent-amber-400 disabled:cursor-not-allowed"
-            aria-label="Guess frame position on movie timeline"
-          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => handleAdjustGuess(-1)}
+              disabled={isResultShown || guessedTimestampSeconds === 0}
+              className="h-10 w-10 shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 text-lg text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Сдвинуть выбор на одну секунду назад"
+              title="На секунду назад"
+            >
+              ←
+            </button>
 
-          <div className="relative mt-5 h-3 w-full rounded-full bg-zinc-800">
-            <div
-              className="h-3 rounded-full bg-amber-400"
-              style={{ width: `${guessPercent}%` }}
+            <input
+              type="range"
+              min="0"
+              max={movie.runtimeSeconds}
+              step="1"
+              value={guessedTimestampSeconds}
+              disabled={isResultShown}
+              onChange={(event) =>
+                setGuessedTimestampSeconds(Number(event.target.value))
+              }
+              className="min-w-0 flex-1 cursor-pointer accent-amber-400 disabled:cursor-not-allowed"
+              aria-label="Выбор момента на таймлайне фильма"
             />
 
-            <div
-              className="absolute top-1/2 h-6 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-200"
-              style={{ left: `${guessPercent}%` }}
-              aria-hidden="true"
-            />
-
-            {isResultShown && (
-              <div
-                className="absolute top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400"
-                style={{ left: `${correctPercent}%` }}
-                aria-hidden="true"
-              />
-            )}
+            <button
+              type="button"
+              onClick={() => handleAdjustGuess(1)}
+              disabled={
+                isResultShown ||
+                guessedTimestampSeconds === movie.runtimeSeconds
+              }
+              className="h-10 w-10 shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 text-lg text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Сдвинуть выбор на одну секунду вперёд"
+              title="На секунду вперёд"
+            >
+              →
+            </button>
           </div>
 
           <div className="mt-3 flex justify-center gap-6 text-xs text-zinc-500">
@@ -153,10 +204,18 @@ export default function Home() {
 
         {isResultShown ? (
           <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900 px-6 py-5">
-            <p className="text-lg font-semibold text-zinc-100">
-              Ошибка: {formatTime(differenceSeconds)}
+            {differenceSeconds === 0 ? (
+              <p className="text-lg font-semibold text-emerald-400">
+                HEADSHOT
+              </p>
+            ) : (
+              <p className="text-lg font-semibold text-zinc-100">
+                Ошиблись на: {formatTime(differenceSeconds)}
+              </p>
+            )}
+            <p className="mt-2 text-sm text-zinc-400">
+              Счёт: {roundScore}
             </p>
-            <p className="mt-2 text-sm text-zinc-400">Score: {score} / 100</p>
           </div>
         ) : (
           <p className="mt-8 text-sm text-zinc-500">
@@ -171,15 +230,18 @@ export default function Home() {
             disabled={isResultShown}
             className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
           >
-            Check guess
+            Ответить
           </button>
 
           <button
             type="button"
             onClick={handleNextMovie}
-            className="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800"
+            disabled={!isResultShown}
+            className="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Next movie
+            {movieIndex === movies.length - 1
+              ? "Завершить игру"
+              : "Следующий фильм"}
           </button>
         </div>
       </div>

@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+
+const jAudioCassette = localFont({
+  src: "./fonts/j_audio_cassette/J Audio Cassette.woff2",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "CinemaGuesser",
@@ -13,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className="antialiased">
-      <body>{children}</body>
+      <body className={jAudioCassette.className}>{children}</body>
     </html>
   );
 }
