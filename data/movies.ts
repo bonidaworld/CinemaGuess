@@ -8,7 +8,14 @@ export type Movie = {
 };
 
 export const movies: Movie[] = [
-
+ {
+  id: "1",
+  title: "The Fifth Element",
+  year: 1997,
+  runtimeSeconds: 7560,
+  frameImage: "/frames/1_The Fifth Element.jpg",
+  frameTimestampSeconds: 2725,
+  },
   {
     id: "2",
     title: "Die Hard",

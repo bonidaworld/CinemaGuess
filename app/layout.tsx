@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CinemaGuesser",
-  description: "Guess where the movie frame appears on the timeline.",
+  description: "Угадайте, на какой минуте фильма сделан этот кадр.",
 };
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="ru" className="antialiased">
+      <body>{children}</body>
     </html>
   );
 }

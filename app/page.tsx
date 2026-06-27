@@ -82,7 +82,7 @@ export default function Home() {
         </h1>
 
         <p className="mt-4 text-base text-zinc-400 sm:text-lg">
-          Guess where the movie frame appears on the timeline.
+          Угадайте, на какой минуте фильма сделан этот кадр.
         </p>
 
         <div className="relative mt-10 aspect-video w-full overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
@@ -182,10 +182,6 @@ export default function Home() {
             Next movie
           </button>
         </div>
-
-        <p className="mt-12 text-sm text-zinc-600">
-          Step 2: guessing mechanic
-        </p>
       </div>
     </main>
   );
