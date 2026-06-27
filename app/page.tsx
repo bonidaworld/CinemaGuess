@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useState } from "react";
 import { movies } from "@/data/movies";
 
+type GameScreen = "menu" | "game" | "results";
+
 function formatTime(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -18,6 +20,34 @@ function formatTime(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+function calculateRoundResult(
+  targetSeconds: number,
+  guessedSeconds: number,
+  runtimeSeconds: number,
+) {
+  const differenceSeconds = Math.abs(guessedSeconds - targetSeconds);
+
+  const maxPossibleDifference = Math.max(
+    targetSeconds,
+    runtimeSeconds - targetSeconds,
+  );
+
+  const normalizedError = Math.min(
+    differenceSeconds / maxPossibleDifference,
+    1,
+  );
+
+  const steepness = 3;
+
+  const scoreMultiplier =
+    (Math.exp(-steepness * normalizedError) - Math.exp(-steepness)) /
+    (1 - Math.exp(-steepness));
+
+  const roundScore = Math.round(1000 * Math.max(0, scoreMultiplier));
+
+  return { differenceSeconds, roundScore };
+}
+
 export default function Home() {
   const [movieIndex, setMovieIndex] = useState(0);
   const [guessedTimestampSeconds, setGuessedTimestampSeconds] = useState(
@@ -25,7 +55,7 @@ export default function Home() {
   );
   const [isResultShown, setIsResultShown] = useState(false);
   const [sessionScore, setSessionScore] = useState(0);
-  const [isSessionFinished, setIsSessionFinished] = useState(false);
+  const [screen, setScreen] = useState<GameScreen>("menu");
 
   const movie = movies[movieIndex];
 
@@ -39,12 +69,10 @@ export default function Home() {
     );
   }
 
-  const differenceSeconds = Math.abs(
-    guessedTimestampSeconds - movie.frameTimestampSeconds,
-  );
-  const roundScore = Math.max(
-    0,
-    Math.round(1000 - (differenceSeconds / movie.runtimeSeconds) * 1000),
+  const { differenceSeconds, roundScore } = calculateRoundResult(
+    movie.frameTimestampSeconds,
+    guessedTimestampSeconds,
+    movie.runtimeSeconds,
   );
 
   function handleCheckGuess() {
@@ -64,7 +92,7 @@ export default function Home() {
 
   function handleNextMovie() {
     if (movieIndex === movies.length - 1) {
-      setIsSessionFinished(true);
+      setScreen("results");
       return;
     }
 
@@ -76,17 +104,43 @@ export default function Home() {
     setIsResultShown(false);
   }
 
-  function handleRestartGame() {
+  function handleStartGame() {
     setMovieIndex(0);
     setGuessedTimestampSeconds(
       Math.round((movies[0]?.runtimeSeconds ?? 0) / 2),
     );
     setIsResultShown(false);
     setSessionScore(0);
-    setIsSessionFinished(false);
+    setScreen("game");
   }
 
-  if (isSessionFinished) {
+  function handleReturnToMenu() {
+    setScreen("menu");
+  }
+
+  if (screen === "menu") {
+    return (
+      <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 py-10 text-zinc-100">
+        <div className="flex w-full max-w-xl flex-col items-center text-center">
+          <h1 className="text-5xl font-bold tracking-tight sm:text-6xl">
+            CinemaGuesser
+          </h1>
+          <p className="mt-5 text-zinc-400">
+            Угадайте, на какой минуте фильма сделан этот кадр.
+          </p>
+          <button
+            type="button"
+            onClick={handleStartGame}
+            className="mt-10 rounded-lg bg-amber-400 px-8 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+          >
+            Играть
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (screen === "results") {
     return (
       <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 py-10 text-zinc-100">
         <div className="flex w-full max-w-xl flex-col items-center text-center">
@@ -98,13 +152,22 @@ export default function Home() {
           <p className="mt-3 text-6xl font-bold text-emerald-400">
             {sessionScore}
           </p>
-          <button
-            type="button"
-            onClick={handleRestartGame}
-            className="mt-10 rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
-          >
-            Начать игру заново
-          </button>
+          <div className="mt-10 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleStartGame}
+              className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+            >
+              Начать игру заново
+            </button>
+            <button
+              type="button"
+              onClick={handleReturnToMenu}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800"
+            >
+              Вернуться в главное меню
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -224,25 +287,25 @@ export default function Home() {
         )}
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <button
-            type="button"
-            onClick={handleCheckGuess}
-            disabled={isResultShown}
-            className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-          >
-            Ответить
-          </button>
-
-          <button
-            type="button"
-            onClick={handleNextMovie}
-            disabled={!isResultShown}
-            className="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {movieIndex === movies.length - 1
-              ? "Завершить игру"
-              : "Следующий фильм"}
-          </button>
+          {isResultShown ? (
+            <button
+              type="button"
+              onClick={handleNextMovie}
+              className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+            >
+              {movieIndex === movies.length - 1
+                ? "Завершить игру"
+                : "Следующий фильм"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCheckGuess}
+              className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+            >
+              Ответить
+            </button>
+          )}
         </div>
       </div>
     </main>
