@@ -4,12 +4,21 @@ import { movies } from "@/data/movies";
 export const dynamic = "force-dynamic";
 
 // Route Handlers run on the server, so the hidden timestamp stays here.
-export async function GET() {
-  const randomIndex = Math.floor(Math.random() * frames.length);
-  const frame = frames[randomIndex];
+export async function GET(request: Request) {
+  const searchParams = new URL(request.url).searchParams;
+  const excludedFrameIds = new Set(searchParams.getAll("exclude"));
+  const availableFrames = frames.filter(
+    (frame) => !excludedFrameIds.has(frame.id),
+  );
+
+  const randomIndex = Math.floor(Math.random() * availableFrames.length);
+  const frame = availableFrames[randomIndex];
 
   if (!frame) {
-    return Response.json({ error: "No frames available" }, { status: 500 });
+    return Response.json(
+      { error: "No unused frames available" },
+      { status: 409 },
+    );
   }
 
   const movie = movies.find((item) => item.id === frame.movieId);

@@ -41,6 +41,7 @@ export default function Home() {
   const [screen, setScreen] = useState<GameScreen>("menu");
   const [round, setRound] = useState<PublicRound | null>(null);
   const [roundNumber, setRoundNumber] = useState(1);
+  const [usedFrameIds, setUsedFrameIds] = useState<string[]>([]);
   const [guessedTimestampSeconds, setGuessedTimestampSeconds] = useState(0);
   const [guessResult, setGuessResult] = useState<GuessResult | null>(null);
   const [sessionScore, setSessionScore] = useState(0);
@@ -59,14 +60,22 @@ export default function Home() {
       : 0;
 
   // The browser asks the server for a round without the correct answer.
-  async function loadRandomRound() {
+  async function loadRandomRound(excludedFrameIds: string[]) {
     setIsLoading(true);
     setErrorMessage(null);
     setRound(null);
     setGuessResult(null);
 
     try {
-      const response = await fetch("/api/round", { cache: "no-store" });
+      const searchParams = new URLSearchParams();
+
+      for (const frameId of excludedFrameIds) {
+        searchParams.append("exclude", frameId);
+      }
+
+      const query = searchParams.toString();
+      const endpoint = query ? `/api/round?${query}` : "/api/round";
+      const response = await fetch(endpoint, { cache: "no-store" });
 
       if (!response.ok) {
         throw new Error("Failed to load round");
@@ -75,6 +84,7 @@ export default function Home() {
       const nextRound = (await response.json()) as PublicRound;
 
       setRound(nextRound);
+      setUsedFrameIds([...excludedFrameIds, nextRound.frameId]);
       setGuessedTimestampSeconds(
         Math.round(nextRound.runtimeSeconds / 2),
       );
@@ -87,9 +97,10 @@ export default function Home() {
 
   async function handleStartGame() {
     setRoundNumber(1);
+    setUsedFrameIds([]);
     setSessionScore(0);
     setScreen("game");
-    await loadRandomRound();
+    await loadRandomRound([]);
   }
 
   // Only frameId and the normalized guess are sent to the server.
@@ -149,7 +160,7 @@ export default function Home() {
     }
 
     setRoundNumber((currentRound) => currentRound + 1);
-    await loadRandomRound();
+    await loadRandomRound(usedFrameIds);
   }
 
   function handleReturnToMenu() {
@@ -228,7 +239,7 @@ export default function Home() {
           </p>
           <button
             type="button"
-            onClick={loadRandomRound}
+            onClick={() => loadRandomRound(usedFrameIds)}
             className="mt-6 rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
           >
             Попробовать снова
