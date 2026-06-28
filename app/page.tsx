@@ -2,9 +2,25 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { movies } from "@/data/movies";
+
+const ROUNDS_PER_GAME = 6;
 
 type GameScreen = "menu" | "game" | "results";
+
+type PublicRound = {
+  frameId: string;
+  movieTitle: string;
+  year: number;
+  runtimeSeconds: number;
+  image: string;
+};
+
+type GuessResult = {
+  guess: number;
+  actualPosition: number;
+  errorPercent: number;
+  score: number;
+};
 
 function formatTime(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
@@ -20,98 +36,120 @@ function formatTime(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function calculateRoundResult(
-  targetSeconds: number,
-  guessedSeconds: number,
-  runtimeSeconds: number,
-) {
-  const differenceSeconds = Math.abs(guessedSeconds - targetSeconds);
-
-  const maxPossibleDifference = Math.max(
-    targetSeconds,
-    runtimeSeconds - targetSeconds,
-  );
-
-  const normalizedError = Math.min(
-    differenceSeconds / maxPossibleDifference,
-    1,
-  );
-
-  const steepness = 3;
-
-  const scoreMultiplier =
-    (Math.exp(-steepness * normalizedError) - Math.exp(-steepness)) /
-    (1 - Math.exp(-steepness));
-
-  const roundScore = Math.round(1000 * Math.max(0, scoreMultiplier));
-
-  return { differenceSeconds, roundScore };
-}
-
+// This component runs in the browser and only stores public round data.
 export default function Home() {
-  const [movieIndex, setMovieIndex] = useState(0);
-  const [guessedTimestampSeconds, setGuessedTimestampSeconds] = useState(
-    Math.round((movies[0]?.runtimeSeconds ?? 0) / 2),
-  );
-  const [isResultShown, setIsResultShown] = useState(false);
-  const [sessionScore, setSessionScore] = useState(0);
   const [screen, setScreen] = useState<GameScreen>("menu");
+  const [round, setRound] = useState<PublicRound | null>(null);
+  const [roundNumber, setRoundNumber] = useState(1);
+  const [guessedTimestampSeconds, setGuessedTimestampSeconds] = useState(0);
+  const [guessResult, setGuessResult] = useState<GuessResult | null>(null);
+  const [sessionScore, setSessionScore] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const movie = movies[movieIndex];
+  const isResultShown = guessResult !== null;
+  const targetTimestampSeconds =
+    round && guessResult
+      ? Math.round(guessResult.actualPosition * round.runtimeSeconds)
+      : 0;
+  const differenceSeconds =
+    round && guessResult
+      ? Math.round((guessResult.errorPercent / 100) * round.runtimeSeconds)
+      : 0;
 
-  if (!movie) {
-    return (
-      <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 text-zinc-100">
-        <p className="text-center text-zinc-400">
-          Добавь хотя бы один фильм в data/movies.ts.
-        </p>
-      </main>
-    );
+  // The browser asks the server for a round without the correct answer.
+  async function loadRandomRound() {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setRound(null);
+    setGuessResult(null);
+
+    try {
+      const response = await fetch("/api/round", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error("Failed to load round");
+      }
+
+      const nextRound = (await response.json()) as PublicRound;
+
+      setRound(nextRound);
+      setGuessedTimestampSeconds(
+        Math.round(nextRound.runtimeSeconds / 2),
+      );
+    } catch {
+      setErrorMessage("Не удалось загрузить раунд.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  const { differenceSeconds, roundScore } = calculateRoundResult(
-    movie.frameTimestampSeconds,
-    guessedTimestampSeconds,
-    movie.runtimeSeconds,
-  );
+  async function handleStartGame() {
+    setRoundNumber(1);
+    setSessionScore(0);
+    setScreen("game");
+    await loadRandomRound();
+  }
 
-  function handleCheckGuess() {
-    if (isResultShown) {
+  // Only frameId and the normalized guess are sent to the server.
+  async function handleCheckGuess() {
+    if (!round || isResultShown || isSubmitting) {
       return;
     }
 
-    setSessionScore((currentScore) => currentScore + roundScore);
-    setIsResultShown(true);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const guess = guessedTimestampSeconds / round.runtimeSeconds;
+      const response = await fetch("/api/guess", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          frameId: round.frameId,
+          guess,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to check guess");
+      }
+
+      const result = (await response.json()) as GuessResult;
+
+      setGuessResult(result);
+      setSessionScore((currentScore) => currentScore + result.score);
+    } catch {
+      setErrorMessage("Не удалось проверить ответ.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleAdjustGuess(seconds: number) {
+    if (!round) {
+      return;
+    }
+
     setGuessedTimestampSeconds((currentTimestamp) =>
-      Math.min(movie.runtimeSeconds, Math.max(0, currentTimestamp + seconds)),
+      Math.min(
+        round.runtimeSeconds,
+        Math.max(0, currentTimestamp + seconds),
+      ),
     );
   }
 
-  function handleNextMovie() {
-    if (movieIndex === movies.length - 1) {
+  async function handleNextRound() {
+    if (roundNumber === ROUNDS_PER_GAME) {
       setScreen("results");
       return;
     }
 
-    const nextMovieIndex = movieIndex + 1;
-    const nextMovie = movies[nextMovieIndex];
-
-    setMovieIndex(nextMovieIndex);
-    setGuessedTimestampSeconds(Math.round(nextMovie.runtimeSeconds / 2));
-    setIsResultShown(false);
-  }
-
-  function handleStartGame() {
-    setMovieIndex(0);
-    setGuessedTimestampSeconds(
-      Math.round((movies[0]?.runtimeSeconds ?? 0) / 2),
-    );
-    setIsResultShown(false);
-    setSessionScore(0);
-    setScreen("game");
+    setRoundNumber((currentRound) => currentRound + 1);
+    await loadRandomRound();
   }
 
   function handleReturnToMenu() {
@@ -173,12 +211,39 @@ export default function Home() {
     );
   }
 
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 text-zinc-100">
+        <p className="text-zinc-400">Загрузка раунда...</p>
+      </main>
+    );
+  }
+
+  if (!round) {
+    return (
+      <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 text-zinc-100">
+        <div className="text-center">
+          <p className="text-zinc-400">
+            {errorMessage ?? "Раунд недоступен."}
+          </p>
+          <button
+            type="button"
+            onClick={loadRandomRound}
+            className="mt-6 rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+          >
+            Попробовать снова
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center bg-zinc-950 px-6 py-10 text-zinc-100">
       <div className="flex w-full max-w-4xl flex-col items-center text-center">
         <div className="mb-3 flex items-center gap-6 text-sm font-medium">
           <p className="text-amber-400">
-            Раунд {movieIndex + 1} / {movies.length}
+            Раунд {roundNumber} / {ROUNDS_PER_GAME}
           </p>
           <p className="text-zinc-400">Общий счёт: {sessionScore}</p>
         </div>
@@ -193,8 +258,8 @@ export default function Home() {
 
         <div className="relative mt-10 aspect-video w-full overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
           <Image
-            src={movie.frameImage}
-            alt={`Frame from ${movie.title}`}
+            src={round.image}
+            alt={`Frame from ${round.movieTitle}`}
             fill
             priority
             className="object-contain"
@@ -202,13 +267,13 @@ export default function Home() {
         </div>
 
         <p className="mt-4 text-zinc-500">
-          {movie.title} ({movie.year})
+          {round.movieTitle} ({round.year})
         </p>
 
         <div className="mt-8 w-full">
           <div className="mb-3 flex justify-between text-xs text-zinc-500">
             <span>0:00</span>
-            <span>{formatTime(movie.runtimeSeconds)}</span>
+            <span>{formatTime(round.runtimeSeconds)}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -226,7 +291,7 @@ export default function Home() {
             <input
               type="range"
               min="0"
-              max={movie.runtimeSeconds}
+              max={round.runtimeSeconds}
               step="1"
               value={guessedTimestampSeconds}
               disabled={isResultShown}
@@ -242,7 +307,7 @@ export default function Home() {
               onClick={() => handleAdjustGuess(1)}
               disabled={
                 isResultShown ||
-                guessedTimestampSeconds === movie.runtimeSeconds
+                guessedTimestampSeconds === round.runtimeSeconds
               }
               className="h-10 w-10 shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 text-lg text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Сдвинуть выбор на одну секунду вперёд"
@@ -257,15 +322,15 @@ export default function Home() {
               Твой выбор: {formatTime(guessedTimestampSeconds)}
             </span>
 
-            {isResultShown && (
+            {guessResult && (
               <span className="text-emerald-400">
-                Верно: {formatTime(movie.frameTimestampSeconds)}
+                Верно: {formatTime(targetTimestampSeconds)}
               </span>
             )}
           </div>
         </div>
 
-        {isResultShown ? (
+        {guessResult ? (
           <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900 px-6 py-5">
             {differenceSeconds === 0 ? (
               <p className="text-lg font-semibold text-emerald-400">
@@ -277,7 +342,7 @@ export default function Home() {
               </p>
             )}
             <p className="mt-2 text-sm text-zinc-400">
-              Счёт: {roundScore}
+              Счёт: {guessResult.score}
             </p>
           </div>
         ) : (
@@ -286,14 +351,18 @@ export default function Home() {
           </p>
         )}
 
+        {errorMessage && (
+          <p className="mt-5 text-sm text-red-400">{errorMessage}</p>
+        )}
+
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          {isResultShown ? (
+          {guessResult ? (
             <button
               type="button"
-              onClick={handleNextMovie}
+              onClick={handleNextRound}
               className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
             >
-              {movieIndex === movies.length - 1
+              {roundNumber === ROUNDS_PER_GAME
                 ? "Завершить игру"
                 : "Следующий фильм"}
             </button>
@@ -301,9 +370,10 @@ export default function Home() {
             <button
               type="button"
               onClick={handleCheckGuess}
-              className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300"
+              disabled={isSubmitting}
+              className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
             >
-              Ответить
+              {isSubmitting ? "Проверка..." : "Ответить"}
             </button>
           )}
         </div>
