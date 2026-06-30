@@ -89,7 +89,7 @@ export default function Home() {
         Math.round(nextRound.runtimeSeconds / 2),
       );
     } catch {
-      setErrorMessage("Не удалось загрузить раунд.");
+      setErrorMessage("Failed to load the round.");
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +134,7 @@ export default function Home() {
       setGuessResult(result);
       setSessionScore((currentScore) => currentScore + result.score);
     } catch {
-      setErrorMessage("Не удалось проверить ответ.");
+      setErrorMessage("Failed to check the answer.");
     } finally {
       setIsSubmitting(false);
     }
@@ -235,7 +235,7 @@ export default function Home() {
       <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 text-zinc-100">
         <div className="text-center">
           <p className="text-zinc-400">
-            {errorMessage ?? "Раунд недоступен."}
+            {errorMessage ?? "Round unavailable."}
           </p>
           <button
             type="button"
